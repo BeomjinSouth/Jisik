@@ -1,141 +1,156 @@
 import streamlit as st
-from openai import OpenAI
+import tiktoken
+from loguru import logger
 
-# OpenAI API 키 설정
-client = OpenAI(api_key=st.secrets["OPENAI"]["OPENAI_API_KEY"])
+from langchain.chains import ConversationalRetrievalChain
+from langchain.chat_models import ChatOpenAI
 
-st.title("도우미 챗봇")
+from langchain.document_loaders import PyPDFLoader
+from langchain.document_loaders import Docx2txtLoader
+from langchain.document_loaders import UnstructuredPowerPointLoader
 
-# 계정 생성 및 로그인 기능
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
 
-if not st.session_state["authenticated"]:
-    with st.form(key="login_form"):
-        st.write("계정이 없으신가요? 아래에서 생성해보세요.")
-        email = st.text_input("이메일")
-        password = st.text_input("비밀번호", type="password")
-        if st.form_submit_button("로그인"):
-            # 로그인 인증 로직 추가 필요 (예: DB 확인)
-            st.session_state["authenticated"] = True
+from langchain.memory import ConversationBufferMemory
+from langchain.vectorstores import FAISS
 
-        st.write("계정이 없으시다면 등록해주세요.")
-        reg_email = st.text_input("등록할 이메일")
-        reg_password = st.text_input("등록할 비밀번호", type="password")
-        if st.form_submit_button("계정 등록"):
-            # 계정 등록 로직 추가 필요 (예: DB에 저장)
-            st.success("계정이 생성되었습니다. 로그인해주세요.")
-else:
-    # 기존 시스템 메시지 설정
-    system_message = '''
-    '''
+# from streamlit_chat import message
+from langchain.callbacks import get_openai_callback
+from langchain.memory import StreamlitChatMessageHistory
+
+def main():
+    st.set_page_config(
+    page_title="DirChat",
+    page_icon=":books:")
+
+    st.title("_Private Data :red[QA Chat]_ :books:")
+
+    if "conversation" not in st.session_state:
+        st.session_state.conversation = None
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = None
+
+    if "processComplete" not in st.session_state:
+        st.session_state.processComplete = None
+
+    with st.sidebar:
+        uploaded_files =  st.file_uploader("Upload your file",type=['pdf','docx'],accept_multiple_files=True)
+        openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
+        process = st.button("Process")
+    if process:
+        if not openai_api_key:
+            st.info("Please add your OpenAI API key to continue.")
+            st.stop()
+        files_text = get_text(uploaded_files)
+        text_chunks = get_text_chunks(files_text)
+        vetorestore = get_vectorstore(text_chunks)
+     
+        st.session_state.conversation = get_conversation_chain(vetorestore,openai_api_key) 
+
+        st.session_state.processComplete = True
+
+    if 'messages' not in st.session_state:
+        st.session_state['messages'] = [{"role": "assistant", 
+                                        "content": "안녕하세요! 주어진 문서에 대해 궁금하신 것이 있으면 언제든 물어봐주세요!"}]
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    history = StreamlitChatMessageHistory(key="chat_messages")
+
+    # Chat logic
+    if query := st.chat_input("질문을 입력해주세요."):
+        st.session_state.messages.append({"role": "user", "content": query})
+
+        with st.chat_message("user"):
+            st.markdown(query)
+
+        with st.chat_message("assistant"):
+            chain = st.session_state.conversation
+
+            with st.spinner("Thinking..."):
+                result = chain({"question": query})
+                with get_openai_callback() as cb:
+                    st.session_state.chat_history = result['chat_history']
+                response = result['answer']
+                source_documents = result['source_documents']
+
+                st.markdown(response)
+                with st.expander("참고 문서 확인"):
+                    st.markdown(source_documents[0].metadata['source'], help = source_documents[0].page_content)
+                    st.markdown(source_documents[1].metadata['source'], help = source_documents[1].page_content)
+                    st.markdown(source_documents[2].metadata['source'], help = source_documents[2].page_content)
+                    
+
+
+# Add assistant message to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+def tiktoken_len(text):
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    tokens = tokenizer.encode(text)
+    return len(tokens)
+
+def get_text(docs):
+
+    doc_list = []
     
-    if "openai_model" not in st.session_state:
-        st.session_state["openai_model"] = "gpt-4o"
+    for doc in docs:
+        file_name = doc.name  # doc 객체의 이름을 파일 이름으로 사용
+        with open(file_name, "wb") as file:  # 파일을 doc.name으로 저장
+            file.write(doc.getvalue())
+            logger.info(f"Uploaded {file_name}")
+        if '.pdf' in doc.name:
+            loader = PyPDFLoader(file_name)
+            documents = loader.load_and_split()
+        elif '.docx' in doc.name:
+            loader = Docx2txtLoader(file_name)
+            documents = loader.load_and_split()
+        elif '.pptx' in doc.name:
+            loader = UnstructuredPowerPointLoader(file_name)
+            documents = loader.load_and_split()
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+        doc_list.extend(documents)
+    return doc_list
 
-    if len(st.session_state.messages) == 0:
-        st.session_state.messages = [{"role": "system", "content": system_message}]
 
-    st.write("원하는 문제를 생성해주세요.")
+def get_text_chunks(text):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=900,
+        chunk_overlap=100,
+        length_function=tiktoken_len
+    )
+    chunks = text_splitter.split_documents(text)
+    return chunks
 
-    # 문제 생성 섹션
-    with st.form(key="question_form"):
-        subject = st.selectbox("과목", ["영어", "수학", "과학"])
-        category = st.selectbox("큰 카테고리", [])
-        sub_category = st.selectbox("작은 카테고리", [])
-        topic = st.text_input("생성하고 싶은 문제 주제")
-        num_questions = st.number_input("문항 개수", min_value=1, max_value=10)
-        difficulty = st.selectbox("난이도", ["쉬움", "중간", "어려움"])
-        question_type = st.selectbox("문항 유형", ["논술형", "객관식"])
-        
-        # 카테고리 데이터 예시
-        category_options = {
-            "영어": {
-                "문법": ["수동태", "현재완료", "관계대명사"],
-                "독해": ["지문 해석", "어휘 문제"],
-                "어휘": ["고급 어휘", "동의어"]
-            },
-            "수학": {
-                "대수": ["방정식", "함수"],
-                "기하": ["삼각형", "원"]
-            },
-            "과학": {
-                "물리": ["역학", "전기"],
-                "화학": ["화학 반응", "주기율표"]
-            }
-        }
-        
-        # 선택된 과목에 따라 카테고리 업데이트
-        if subject:
-            st.session_state.category_options = category_options[subject]
-            category = st.selectbox("큰 카테고리", list(st.session_state.category_options.keys()))
-            if category:
-                sub_category = st.selectbox("작은 카테고리", st.session_state.category_options[category])
 
-        if st.form_submit_button("생성하기"):
-            # GPT를 이용해 문항 생성 로직
-            st.session_state.messages.append({
-                "role": "user", 
-                "content": f"{subject} 과목에서 {category}의 {sub_category}에 대한 {topic} 주제의 {num_questions}개의 {difficulty} 난이도의 {question_type} 문제를 생성해주세요."
-            })
-            with st.chat_message("user"):
-                st.markdown(st.session_state.messages[-1]["content"])
+def get_vectorstore(text_chunks):
+    embeddings = HuggingFaceEmbeddings(
+                                        model_name="jhgan/ko-sroberta-multitask",
+                                        model_kwargs={'device': 'cpu'},
+                                        encode_kwargs={'normalize_embeddings': True}
+                                        )  
+    vectordb = FAISS.from_documents(text_chunks, embeddings)
+    return vectordb
 
-            with st.chat_message("assistant"):
-                stream = client.chat_completions.create(
-                    model=st.session_state["openai_model"],
-                    messages=[
-                        {"role": m["role"], "content": m["content"]}
-                        for m in st.session_state.messages
-                    ],
-                    stream=True,
-                )
-                response = st.write_stream(stream)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+def get_conversation_chain(vetorestore,openai_api_key):
+    llm = ChatOpenAI(openai_api_key=openai_api_key, model_name = 'gpt-3.5-turbo',temperature=0)
+    conversation_chain = ConversationalRetrievalChain.from_llm(
+            llm=llm, 
+            chain_type="stuff", 
+            retriever=vetorestore.as_retriever(search_type = 'mmr', vervose = True), 
+            memory=ConversationBufferMemory(memory_key='chat_history', return_messages=True, output_key='answer'),
+            get_chat_history=lambda h: h,
+            return_source_documents=True,
+            verbose = True
+        )
 
-    # 기존 챗봇 기능
-    for idx, message in enumerate(st.session_state.messages):
-        if idx > 0:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    return conversation_chain
 
-    if prompt := st.chat_input("문제에 대해 질문해주세요."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            stream = client.chat_completions.create(
-                model=st.session_state["openai_model"],
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-                stream=True,
-            )
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
 
-    # 평가하기 섹션
-    if st.button("평가하기"):
-        st.session_state.messages.append({
-            "role": "user", 
-            "content": "지금까지 생성한 문제와 대화 내용을 종합하여 평가해주세요."
-        })
-        with st.chat_message("user"):
-            st.markdown(st.session_state.messages[-1]["content"])
-
-        with st.chat_message("assistant"):
-            stream = client.chat_completions.create(
-                model=st.session_state["openai_model"],
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-                stream=True,
-            )
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+if __name__ == '__main__':
+    main()
