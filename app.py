@@ -104,13 +104,27 @@ if st.session_state.get("questions"):
     user_input = st.text_input("입력칸")
     action = st.selectbox("액션 선택", ["질문하기", "얘기하기", "평가하기"])
 
+    # 현재까지의 대화 내용을 바탕으로 GPT 요청에 포함할 메시지 구성
+    def build_message_context():
+        context = "지금까지의 대화 및 생성된 문제는 다음과 같습니다:\n\n"
+        for message in st.session_state["messages"]:
+            context += f"{message['role']}: {message['content']}\n"
+        
+        context += "\n생성된 문제는 다음과 같습니다:\n"
+        for i, question in enumerate(st.session_state["questions"], 1):
+            context += f"{i}. {question}\n"
+
+        context += f"\n학생의 입력: {user_input}\n"
+        return context
+
     if st.button("실행"):
         if action == "질문하기":
             with st.spinner("GPT 응답 중..."):
                 # OpenAI API를 사용하여 질문에 대한 응답 생성
+                question_context = build_message_context()
                 response = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": f"{user_input}에 대한 질문이 있습니다. 직접적이지 않은, 학생이 고민해볼 수 있는 간접적인 힌트를 생성해주세요."}],
+                    messages=st.session_state["messages"] + [{"role": "user", "content": f"{question_context} 이 입력에 대한 간접적인 힌트를 주세요."}],
                     stream=True,
                 )
                 response_content = st.write_stream(response)
@@ -119,9 +133,10 @@ if st.session_state.get("questions"):
         elif action == "얘기하기":
             with st.spinner("GPT와 대화 중..."):
                 # OpenAI API를 사용하여 대화 진행
+                conversation_context = build_message_context()
                 response = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": f"{user_input}에 대해 대답해주세요."}],
+                    messages=st.session_state["messages"] + [{"role": "user", "content": f"{conversation_context} 이 입력에 대해 대화를 이어가 주세요."}],
                     stream=True,
                 )
                 response_content = st.write_stream(response)
@@ -129,10 +144,14 @@ if st.session_state.get("questions"):
 
         elif action == "평가하기":
             with st.spinner("평가 중..."):
+                # 생성된 문제에 대한 평가 요청 메시지 작성
+                evaluation_context = build_message_context()
+                evaluation_context += "\n이 답변에 대해 평가를 진행해 주세요. 문제와 답변의 관련성을 분석하고, 앞으로 개선해야 할 점을 조언해 주세요."
+
                 # OpenAI API를 사용하여 학습 내용을 평가
                 response = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": f"{user_input}에 대해 다양한 각도에서 평가해주세요. 앞으로 어떤 부분에 대한 보완이 필요한지도 분석해주세요."}],
+                    messages=st.session_state["messages"] + [{"role": "user", "content": evaluation_context}],
                     stream=True,
                 )
                 response_content = st.write_stream(response)
