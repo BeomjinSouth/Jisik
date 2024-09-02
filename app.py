@@ -89,9 +89,12 @@ if st.session_state["email"]:
                 messages=[{
                     "role": "user",
                     "content": f"{subject} 과목의 {main_category}에서 {sub_category}에 대한 {difficulty} 수준의 {question_type} 문제를 {num_questions}개 생성해줘."
-                }]
+                }],
+                stream=True  # 결과를 스트리밍 방식으로 가져옴
             )
-            questions = response['choices'][0]['message']['content']
+
+            # 결과를 스트림으로 처리
+            questions = st.write_stream(response)
             st.session_state["questions"] = questions  # 생성된 문제를 세션에 저장
             st.markdown(questions)  # 화면에 출력
 
@@ -111,7 +114,7 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": user_input}],
                     stream=True,
                 )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
+                response_content = st.write_stream(response)
                 st.markdown(response_content)
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
 
@@ -123,7 +126,7 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": user_input}],
                     stream=True,
                 )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
+                response_content = st.write_stream(response)
                 st.markdown(response_content)
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
 
@@ -135,7 +138,7 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": "평가하기"}],
                     stream=True,
                 )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
+                response_content = st.write_stream(response)
                 st.markdown(response_content)
 
                 # 학습 이력을 데이터베이스에 저장
