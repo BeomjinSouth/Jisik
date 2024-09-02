@@ -114,7 +114,6 @@ if st.session_state.get("questions"):
                     stream=True,
                 )
                 response_content = st.write_stream(response)
-                st.markdown(response_content)
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
 
         elif action == "얘기하기":
@@ -126,7 +125,6 @@ if st.session_state.get("questions"):
                     stream=True,
                 )
                 response_content = st.write_stream(response)
-                st.markdown(response_content)
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
 
         elif action == "평가하기":
@@ -138,7 +136,6 @@ if st.session_state.get("questions"):
                     stream=True,
                 )
                 response_content = st.write_stream(response)
-                st.markdown(response_content)
 
                 # 학습 이력을 데이터베이스에 저장
                 c.execute('INSERT INTO learning_history (email, feedback) VALUES (?, ?)',
