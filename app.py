@@ -97,17 +97,22 @@ if st.session_state["email"]:
             )
 
             # 결과를 스트림으로 처리
-            questions = st.write_stream(response)
-            st.session_state.questions.extend(questions)  # 생성된 문제를 세션에 추가
+            questions = [q['text'] for q in response]  # 각 질문을 리스트에 추가
+            st.session_state["questions"].extend(questions)  # 생성된 문제를 세션에 저장
 
-# 이전에 생성된 문제들을 화면에 표시
-if st.session_state.questions:
-    st.subheader("생성된 문제들")
-    for i, question in enumerate(st.session_state.questions, 1):
+# 생성된 문제와 대화 내용 출력
+if st.session_state["questions"]:
+    st.header("생성된 문제")
+    for i, question in enumerate(st.session_state["questions"], 1):
         st.write(f"{i}. {question}")
 
+if st.session_state["messages"]:
+    st.header("대화 내용")
+    for message in st.session_state["messages"]:
+        st.write(f"{message['role']}: {message['content']}")
+
 # 질의응답 및 평가 UI
-if st.session_state.get("questions"):
+if st.session_state["email"]:
     st.header("문항에 대한 질의응답")
 
     user_input = st.text_input("입력칸")
@@ -136,8 +141,9 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": f"{question_context} 이 입력에 대한 간접적인 힌트를 주세요."}],
                     stream=True,
                 )
-                response_content = st.write_stream(response)
+                response_content = [chunk['text'] for chunk in response]
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
+                st.write("".join(response_content))
 
         elif action == "얘기하기":
             with st.spinner("GPT와 대화 중..."):
@@ -148,8 +154,9 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": f"{conversation_context} 이 입력에 대해 대화를 이어가 주세요."}],
                     stream=True,
                 )
-                response_content = st.write_stream(response)
+                response_content = [chunk['text'] for chunk in response]
                 st.session_state["messages"].append({"role": "assistant", "content": response_content})
+                st.write("".join(response_content))
 
         elif action == "평가하기":
             with st.spinner("평가 중..."):
@@ -163,19 +170,14 @@ if st.session_state.get("questions"):
                     messages=st.session_state["messages"] + [{"role": "user", "content": evaluation_context}],
                     stream=True,
                 )
-                response_content = st.write_stream(response)
+                response_content = [chunk['text'] for chunk in response]
+                feedback = "".join(response_content)
+                st.session_state["messages"].append({"role": "assistant", "content": feedback})
+                st.write(feedback)
 
                 # 학습 이력을 데이터베이스에 저장
                 c.execute('INSERT INTO learning_history (email, feedback) VALUES (?, ?)',
-                          (st.session_state["email"], response_content))
+                          (st.session_state["email"], feedback))
                 conn.commit()
 
-                # 이메일로 평가 결과 전송 (추가 구현 필요)
-                st.success("평가 결과를 이메일로 전송했습니다.")
-
-# 대화 내역을 화면에 표시
-if st.session_state.messages:
-    st.subheader("대화 내역")
-    for message in st.session_state["messages"]:
-        role = "사용자" if message["role"] == "user" else "챗봇"
-        st.write(f"{role}: {message['content']}")
+                st.success("평가 결과가 저장되었습니다.")
