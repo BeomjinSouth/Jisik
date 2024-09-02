@@ -4,18 +4,18 @@ import hashlib
 from openai import OpenAI
 
 # 데이터베이스 설정
-conn = sqlite3.connect('users.db')  # SQLite 데이터베이스 파일을 생성하고 연결합니다.
+conn = sqlite3.connect('users.db')
 c = conn.cursor()
 
-# 사용자 테이블 생성 (이메일과 패스워드를 저장)
+# 사용자 테이블 생성
 c.execute('''CREATE TABLE IF NOT EXISTS users
              (email TEXT PRIMARY KEY, password TEXT)''')
 
-# 학습 이력 테이블 생성 (이메일과 피드백을 저장)
+# 학습 이력 테이블 생성
 c.execute('''CREATE TABLE IF NOT EXISTS learning_history
              (email TEXT, feedback TEXT)''')
 
-# 비밀번호 해싱 함수 (SHA-256 알고리즘 사용)
+# 비밀번호 해싱 함수
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -30,7 +30,7 @@ def login(email, password):
     return c.fetchone()
 
 # GPT API 클라이언트 설정
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])  # API 키를 환경 변수에서 불러옵니다.
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("교육용 챗봇 시스템")
 
@@ -40,6 +40,32 @@ if "email" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# CSS 추가
+st.markdown(
+    """
+    <style>
+    .chat-input-container {
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        background-color: white;
+        padding: 10px 0;
+        box-shadow: 0px -2px 10px rgba(0, 0, 0, 0.1);
+    }
+    .chat-box {
+        margin-bottom: 100px; /* 입력 칸과의 간격 확보 */
+    }
+    .question-box {
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 20px;
+        background-color: #f9f9f9;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # 계정 생성 및 로그인 UI
 if st.session_state["email"]:
@@ -83,63 +109,55 @@ if st.session_state["email"]:
 
     if st.button("생성하기"):
         with st.spinner("문항 생성 중..."):
-            # OpenAI API를 사용하여 문항 생성
             response = client.chat.completions.create(
-                model="gpt-4o",  # 사용할 GPT 모델
+                model="gpt-4o",
                 messages=[{
                     "role": "user",
                     "content": f"{subject} 과목의 {main_category}에서 {sub_category}에 대한 {difficulty} 수준의 {question_type} 문제를 {num_questions}개 생성해줘."
                 }],
-                stream=True  # 결과를 스트리밍 방식으로 가져옴
+                stream=True
             )
 
-            # 결과를 스트림으로 처리
             questions = st.write_stream(response)
-            st.session_state["questions"] = questions  # 생성된 문제를 세션에 저장
+            st.session_state["questions"] = questions
+
+# 생성된 문항 박스
+if st.session_state.get("questions"):
+    st.markdown("### 생성된 문항")
+    st.markdown('<div class="question-box">', unsafe_allow_html=True)
+    for question in st.session_state["questions"]:
+        st.markdown(f"- {question}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # 채팅 UI
 if st.session_state.get("questions"):
-    st.header("GPT와 대화하기")
+    st.markdown('<div class="chat-box">', unsafe_allow_html=True)
+    for message in st.session_state["messages"]:
+        if message["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(message["content"])
+        else:
+            with st.chat_message("assistant"):
+                st.markdown(message["content"])
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    user_input = st.text_input("여기에 채팅 내용을 입력하세요", key="chat_input")
-    
-    if user_input:
-        with st.chat_message("user"):
-            st.markdown(user_input)
-        st.session_state["messages"].append({"role": "user", "content": user_input})
+# 채팅 입력란
+user_input = st.text_input("여기에 채팅 내용을 입력하세요", key="chat_input", on_change=lambda: st.session_state["messages"].append({"role": "user", "content": st.session_state["chat_input"]}))
 
-        with st.chat_message("assistant"):
-            stream = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-                stream=True,
-            )
-            response = st.write_stream(stream)
-        st.session_state["messages"].append({"role": "assistant", "content": response})
-    
-    if st.button("평가하기"):
-        with st.spinner("평가 중..."):
-            # 사용자의 답변 및 태도에 대한 평가 요청 메시지 작성
-            evaluation_context = "지금까지의 대화 및 생성된 문제에 대한 사용자의 답변 및 태도는 다음과 같습니다:\n\n"
-            for i, message in enumerate(st.session_state["messages"], 1):
-                if message["role"] == "user":
-                    evaluation_context += f"{i}. {message['content']}\n"
+# GPT 응답 처리
+if user_input:
+    with st.chat_message("user"):
+        st.markdown(user_input)
+    st.session_state["messages"].append({"role": "user", "content": user_input})
 
-            evaluation_context += "\n이 답변에 대해 평가를 진행해 주세요. 답변의 정확성, 태도, 그리고 개선이 필요한 점에 대해 피드백을 제공해 주세요."
-
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=st.session_state["messages"] + [{"role": "user", "content": evaluation_context}],
-                stream=True,
-            )
-            response_content = st.write_stream(response)
-
-            # 학습 이력을 데이터베이스에 저장
-            c.execute('INSERT INTO learning_history (email, feedback) VALUES (?, ?)',
-                      (st.session_state["email"], response_content))
-            conn.commit()
-
-            st.success("평가 결과를 이메일로 전송했습니다.")
+    with st.chat_message("assistant"):
+        stream = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": m["role"], "content": m["content"]}
+                for m in st.session_state.messages
+            ],
+            stream=True,
+        )
+        response = st.write_stream(stream)
+    st.session_state["messages"].append({"role": "assistant", "content": response})
