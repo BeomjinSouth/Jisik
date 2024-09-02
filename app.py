@@ -41,6 +41,9 @@ if "email" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "questions" not in st.session_state:
+    st.session_state.questions = []
+
 # 계정 생성 및 로그인 UI
 if st.session_state["email"]:
     st.success(f"로그인 성공: {st.session_state['email']}")
@@ -95,7 +98,13 @@ if st.session_state["email"]:
 
             # 결과를 스트림으로 처리
             questions = st.write_stream(response)
-            st.session_state["questions"] = questions  # 생성된 문제를 세션에 저장
+            st.session_state.questions.extend(questions)  # 생성된 문제를 세션에 추가
+
+# 이전에 생성된 문제들을 화면에 표시
+if st.session_state.questions:
+    st.subheader("생성된 문제들")
+    for i, question in enumerate(st.session_state.questions, 1):
+        st.write(f"{i}. {question}")
 
 # 질의응답 및 평가 UI
 if st.session_state.get("questions"):
@@ -163,3 +172,10 @@ if st.session_state.get("questions"):
 
                 # 이메일로 평가 결과 전송 (추가 구현 필요)
                 st.success("평가 결과를 이메일로 전송했습니다.")
+
+# 대화 내역을 화면에 표시
+if st.session_state.messages:
+    st.subheader("대화 내역")
+    for message in st.session_state["messages"]:
+        role = "사용자" if message["role"] == "user" else "챗봇"
+        st.write(f"{role}: {message['content']}")
