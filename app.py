@@ -84,14 +84,12 @@ if st.session_state["email"]:
     if st.button("생성하기"):
         with st.spinner("문항 생성 중..."):
             # OpenAI API를 사용하여 문항 생성
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",  # 사용할 GPT 모델
-                messages=[{
-                    "role": "user",
-                    "content": f"{subject} 과목의 {main_category}에서 {sub_category}에 대한 {difficulty} 수준의 {question_type} 문제를 {num_questions}개 생성해줘."
-                }]
+            response = client.Completions.create(
+                model="gpt-4",  # 사용할 GPT 모델
+                prompt=f"{subject} 과목의 {main_category}에서 {sub_category}에 대한 {difficulty} 수준의 {question_type} 문제를 {num_questions}개 생성해줘.",
+                max_tokens=500
             )
-            questions = response['choices'][0]['message']['content']
+            questions = response['choices'][0]['text']
             st.session_state["questions"] = questions  # 생성된 문제를 세션에 저장
             st.markdown(questions)  # 화면에 출력
 
@@ -103,39 +101,26 @@ if st.session_state.get("questions"):
     action = st.selectbox("액션 선택", ["질문하기", "얘기하기", "평가하기"])
 
     if st.button("실행"):
-        if action == "질문하기":
-            with st.spinner("GPT 응답 중..."):
-                # OpenAI API를 사용하여 질문에 대한 응답 생성
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": user_input}],
-                    stream=True,
-                )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
-                st.markdown(response_content)
-                st.session_state["messages"].append({"role": "assistant", "content": response_content})
+        with st.spinner("GPT 응답 중..."):
+            # OpenAI API를 사용하여 질문에 대한 응답 생성
+            response = client.Completions.create(
+                model="gpt-4",
+                prompt=user_input,
+                max_tokens=500
+            )
+            response_content = response['choices'][0]['text']
+            st.markdown(response_content)
+            st.session_state["messages"].append({"role": "assistant", "content": response_content})
 
-        elif action == "얘기하기":
-            with st.spinner("GPT와 대화 중..."):
-                # OpenAI API를 사용하여 대화 진행
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": user_input}],
-                    stream=True,
-                )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
-                st.markdown(response_content)
-                st.session_state["messages"].append({"role": "assistant", "content": response_content})
-
-        elif action == "평가하기":
+        if action == "평가하기":
             with st.spinner("평가 중..."):
                 # OpenAI API를 사용하여 학습 내용을 평가
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=st.session_state["messages"] + [{"role": "user", "content": "평가하기"}],
-                    stream=True,
+                response = client.Completions.create(
+                    model="gpt-4",
+                    prompt="학습 내용 평가",
+                    max_tokens=500
                 )
-                response_content = "".join([chunk.choices[0].delta.content for chunk in response])
+                response_content = response['choices'][0]['text']
                 st.markdown(response_content)
 
                 # 학습 이력을 데이터베이스에 저장
