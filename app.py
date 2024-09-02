@@ -84,7 +84,7 @@ if st.session_state["email"]:
     if st.button("생성하기"):
         with st.spinner("문항 생성 중..."):
             # OpenAI API를 사용하여 문항 생성
-            response = client.Completions.create(
+            response = client.completions.create(
                 model="gpt-4",  # 사용할 GPT 모델
                 prompt=f"{subject} 과목의 {main_category}에서 {sub_category}에 대한 {difficulty} 수준의 {question_type} 문제를 {num_questions}개 생성해줘.",
                 max_tokens=500
@@ -103,7 +103,7 @@ if st.session_state.get("questions"):
     if st.button("실행"):
         with st.spinner("GPT 응답 중..."):
             # OpenAI API를 사용하여 질문에 대한 응답 생성
-            response = client.Completions.create(
+            response = client.completions.create(
                 model="gpt-4",
                 prompt=user_input,
                 max_tokens=500
@@ -115,7 +115,7 @@ if st.session_state.get("questions"):
         if action == "평가하기":
             with st.spinner("평가 중..."):
                 # OpenAI API를 사용하여 학습 내용을 평가
-                response = client.Completions.create(
+                response = client.completions.create(
                     model="gpt-4",
                     prompt="학습 내용 평가",
                     max_tokens=500
