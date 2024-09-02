@@ -96,7 +96,6 @@ if st.session_state["email"]:
             # 결과를 스트림으로 처리
             questions = st.write_stream(response)
             st.session_state["questions"] = questions  # 생성된 문제를 세션에 저장
-            st.markdown(questions)  # 화면에 출력
 
 # 질의응답 및 평가 UI
 if st.session_state.get("questions"):
