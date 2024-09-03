@@ -2,7 +2,7 @@ import os
 from openai import OpenAI
 
 # OpenAI API 키 설정
-openai_client = OpenAI(api_key=os.getenv("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"))
+openai_client = OpenAI(api_key=os.getenv("s9Mqo"))
 
 import streamlit as st
 from langchain.document_loaders import PyPDFLoader
