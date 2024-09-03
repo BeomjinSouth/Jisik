@@ -1,84 +1,48 @@
-import streamlit as st
-from utils import print_messages, StreamHandler
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.messages import ChatMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import ChatOpenAI
-
 import os
+from openai import OpenAI
 
-st.set_page_config(page_title="ChatGPT", page_icon="🦜")
-st.title("🦜 ChatGPT")
+# OpenAI API 키 설정
+openai_client = OpenAI(api_key=os.getenv("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"))
 
-# API KEY 설정
-os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+import streamlit as st
+from langchain.document_loaders import PyPDFLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.chains import ChatVectorDBChain
+from langchain.chat_models import ChatOpenAI
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-# 메시지 세션 상태 초기화
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
+def setup_pdf_qa(pdf):
+    st.session_state.pdf = pdf
+    loader = PyPDFLoader(pdf)
+    pdf_doc = loader.load_and_split()
+    return pdf_doc
 
-# 채팅 데이터를 저장할 store 세션 상태 생성
-if "store" not in st.session_state:
-    st.session_state["store"] = dict()
+def setup_qa_chain(pdf_doc):
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=500)
+    persist_directory = './persist_directory/'
+    embedding = OpenAIEmbeddings(client=openai_client)
+    all_splits = text_splitter.split_documents(pdf_doc)
+    vectordb = Chroma.from_documents(all_splits, embedding=embedding, persist_directory=persist_directory)
+    vectordb.persist()
+    pdf_qa = ChatVectorDBChain.from_llm(ChatOpenAI(temperature=0, model_name="gpt-4", client=openai_client), vectordb)
+    return pdf_qa
 
-# 사이드바 설정
-with st.sidebar:
-    session_id = st.text_input("Session ID", value="abc123")
-    
-    clear_btn = st.button("대화로그 초기화")
-    if clear_btn:
-        st.session_state["messages"] = []
-        st.experimental_rerun()
+def main():
+    st.header("PDF와 Q&A 💬")
 
-# 이전 대화로그를 출력하는 코드
-print_messages()
+    pdf = st.text_input("PDF 파일 경로를 입력하세요:")
 
-# 세션 ID를 기반으로 세션 기록을 반환하는 함수
-def get_session_history(session_ids: str) -> BaseChatMessageHistory:
-    if session_ids not in st.session_state["store"]:  # 세션 ID가 store에 없는 경우
-        st.session_state["store"][session_ids] = ChatMessageHistory()
-    return st.session_state["store"][session_ids]
+    if st.button("PDF 로드"):
+        st.session_state.pdf_doc = setup_pdf_qa(pdf)
+        st.write("PDF가 로드되었습니다!")
 
-# 사용자 입력 처리
-if user_input := st.chat_input("메시지를 입력해 주세요."):
-    # 사용자가 입력한 내용 처리
-    st.chat_message("user").write(f"{user_input}")
-    st.session_state["messages"].append(ChatMessage(role="user", content=user_input))
+    query = st.text_input("PDF에 대해 질문하세요:")
 
-    # AI의 답변 생성
-    with st.chat_message("assistant"):
-        stream_handler = StreamHandler(st.empty())
+    if query:
+        pdf_qa = setup_qa_chain(st.session_state.pdf_doc)
+        result = pdf_qa({"question": query, "chat_history": []})
+        st.write(result["answer"])
 
-        # LLM을 사용하여 AI의 답변을 생성
-        llm = ChatOpenAI(streaming=True, callbacks=[stream_handler])
-
-        # 프롬프트 생성
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", "질문에 짧고 간결하게 답변해 주세요."),
-            ]
-        )
-
-        # 대화 기록을 변수로 사용, history가 MessageHistory 의 key가 됨
-        chain = prompt | llm
-
-        chain_with_memory = RunnableWithMessageHistory(  # RunnableWithMessageHistory 객체 생성
-            chain,  # 실행할 Runnable 객체
-            get_session_history,  # 세션 기록을 가져오는 함수
-            input_messages_key="question",  # 사용자 질문의 키
-            history_messages_key="history",  # 기록 메시지의 키
-        )
-
-        # 답변 생성 및 세션 ID 설정
-        response = chain_with_memory.invoke(
-            {"question": user_input},
-            config={"configurable": {"session_id": session_id}},
-        )
-
-        # 생성된 답변을 세션 상태에 저장
-        st.session_state["messages"].append(
-            ChatMessage(role="assistant", content=response.content)
-        )
+if __name__ == '__main__':
+    main()
