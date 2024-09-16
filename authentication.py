@@ -61,7 +61,8 @@ def login_user():
             'signature_key',
             cookie_expiry_days=30
         )
-        name, authentication_status, username = authenticator.login('Login', 'main')
+        # 매개변수를 명시적으로 지정하고 반환값을 두 개로 받습니다.
+        name, authentication_status = authenticator.login(form_name='Login', location='main')
         if authentication_status:
             st.session_state['user'] = email
             st.success(f'환영합니다, {email}님!')
