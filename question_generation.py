@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 
 def generate_questions():
     st.subheader('문제 생성')
