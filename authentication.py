@@ -44,7 +44,6 @@ def register_user():
         }
         save_user_config(config)
         st.success('계정이 성공적으로 생성되었습니다. 로그인 해주세요.')
-
 def login_user():
     st.subheader('로그인')
     email = st.text_input('이메일 주소')
@@ -61,8 +60,8 @@ def login_user():
             'signature_key',
             cookie_expiry_days=30
         )
-        # 매개변수를 명시적으로 지정하고 반환값을 두 개로 받습니다.
-        name, authentication_status = authenticator.login(form_name='Login', location='main')
+        # 매개변수를 위치 인자로 전달하고, 반환값을 두 개로 받습니다.
+        name, authentication_status = authenticator.login('Login', 'main')
         if authentication_status:
             st.session_state['user'] = email
             st.success(f'환영합니다, {email}님!')
@@ -71,3 +70,4 @@ def login_user():
             st.error('이메일 또는 비밀번호가 일치하지 않습니다.')
         elif authentication_status == None:
             st.warning('로그인 정보를 입력해주세요.')
+
