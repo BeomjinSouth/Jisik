@@ -6,12 +6,21 @@ from email_validator import validate_email, EmailNotValidError
 
 
 def get_worksheet():
+    # Google Sheets API와 Drive API 사용 범위 설정
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
+
+    # st.secrets로부터 서비스 계정 정보를 불러옵니다
+    creds_dict = st.secrets["gcp_service_account"]
+    
+    # Google Sheets 인증 정보 설정
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
+
+    # Google 스프레드시트 접근
     sheet = client.open_by_key('157IwlgSWvzxbqPoKZwTiRACc6kn1gh1EUOf3SI-JTyw')
     worksheet = sheet.sheet1  # 첫 번째 시트 사용
     return worksheet
+
 
 def register_user():
     st.subheader('회원가입')
