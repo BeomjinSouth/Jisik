@@ -67,7 +67,7 @@ def login_user():
                 if bcrypt.checkpw(password.encode('utf-8'), stored_password):
                     st.success(f'환영합니다, {email}님!')
                     st.session_state['user'] = email
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error('비밀번호가 일치하지 않습니다.')
                 break
